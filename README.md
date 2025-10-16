@@ -1,7 +1,6 @@
-# 🧱 FlipMelvin — Fusion 360 Automation Script
+# FlipMelvin — Autodesk Fusion Automation Script
 **Version:** 1.0  
 **Author:** Andy Hughes  
-**Platform:** Autodesk Fusion (Python API)
 
 ---
 
