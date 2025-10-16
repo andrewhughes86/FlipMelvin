@@ -7,8 +7,8 @@ def run(context):
     script_summary = []
 
     # list of functions 
-    getPoints()
-    copySetup()             # Copies the original Melvin setup and assigns new WCS.
+    getPoints()             # Switches to designwork space to get points for later use.
+    flipWCS()               # Flips the WCS 180 degrees. Will also flip it back to the default WCS.
     scriptSummary()         # Displays a summary at the end of the script.
 
 def addMessage(msg):        # This function adds messages throughout the script to give a summary at the end.
@@ -158,7 +158,7 @@ def createOrigin():
     except:
         ui.messageBox(f"flipOrgin(): failed:\n{traceback.format_exc()}")
 
-def copySetup():
+def flipWCS():
     app = adsk.core.Application.get()
     ui = app.userInterface
     ui.workspaces.itemById('CAMEnvironment').activate()
