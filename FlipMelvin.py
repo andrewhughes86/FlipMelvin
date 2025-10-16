@@ -2,17 +2,12 @@
 import adsk.core, adsk.fusion, traceback
 
 def run(context):
-    app = adsk.core.Application.get()
-    ui = app.userInterface
-    ui.workspaces.itemById('FusionSolidEnvironment').activate()  
-
     # Array for collecting messages to display at the end of the script.
     global script_summary  
     script_summary = []
 
     # list of functions 
-    idOrigin()              # Identifies WCS X and Y axis from the stud and track bodies.
-    flipOrgin()             # Creates a sketch and contruction point for the Melvin WCS.
+    getPoints()
     copySetup()             # Copies the original Melvin setup and assigns new WCS.
     scriptSummary()         # Displays a summary at the end of the script.
 
@@ -26,6 +21,29 @@ def addMessage(msg):        # This function adds messages throughout the script 
 
 def in_cm(x):               # This function converts inches to cm.
     return x * 2.54
+
+def getPoints():
+    try:
+        app = adsk.core.Application.get()
+        ui = app.userInterface
+        ui.workspaces.itemById('FusionSolidEnvironment').activate() 
+        product = app.activeProduct
+        design = adsk.fusion.Design.cast(product)
+        rootComp = design.rootComponent
+
+        global melvinPoint, melvinFlippedPoint
+        melvinPoint = rootComp.constructionPoints.itemByName('Melvin WCS')
+        melvinFlippedPoint = rootComp.constructionPoints.itemByName('Melvin Flipped WCS')
+
+        if not melvinPoint:
+            # This is to catch panels made from an earlier script verion.
+            melvinPoint = rootComp.constructionPoints.itemByName('Point2')
+
+        if not melvinFlippedPoint:
+            idOrigin()
+            createOrigin()
+    except:
+        ui.messageBox(f"getPoints(): failed:\n{traceback.format_exc()}")
 
 def idOrigin():
     try:
@@ -80,7 +98,7 @@ def idOrigin():
     except:
         ui.messageBox(f"{traceback.format_exc()}", "idOrigin(): failed!")
 
-def flipOrgin():
+def createOrigin():
     app = adsk.core.Application.get()
     ui = app.userInterface
     product = app.activeProduct
@@ -131,74 +149,77 @@ def flipOrgin():
         point_input = constructionPoints.createInput()
         point_input.setByPoint(sketchPoint)
         new_point = constructionPoints.add(point_input)
-        new_point.name = 'Point3'
+        new_point.name = 'Melvin Flipped WCS'
         app.activeViewport.fit()
+
+        global melvinFlippedPoint
+        melvinFlippedPoint = rootComp.constructionPoints.itemByName('Melvin Flipped WCS')
+        addMessage("Melvin Flipped WCS was created.")
     except:
         ui.messageBox(f"flipOrgin(): failed:\n{traceback.format_exc()}")
 
 def copySetup():
     app = adsk.core.Application.get()
     ui = app.userInterface
-    product = app.activeProduct
-    design = adsk.fusion.Design.cast(product)
-    rootComp = design.rootComponent
+    ui.workspaces.itemById('CAMEnvironment').activate()
 
     try:
         # Define global variables
         global cam, setups, doc, cam_product,camOcc, setupInput
     
         # Switch to Manufacture Workspace
-        ui.workspaces.itemById('CAMEnvironment').activate()
-
-        # Get the active product.
+        
         cam = adsk.cam.CAM.cast(app.activeProduct)
-
-        # Get the Setups collection.
         setups = cam.setups
 
-    # Find the setup named "Melvin"
-        source_setup = None
+        # Find the setup named "Melvin"
         for setup in setups:
             if setup.name == "Melvin":
-                source_setup = setup
+                setup = setup
                 break
 
-        if not source_setup:
-            ui.messageBox('Setup named "Melvin" not found.')
-            return
+        origin_refs = setup.parameters.itemByName('wcs_origin_point').value.value
+        origin_name = origin_refs[0].name
+        #ui.messageBox(f"WCS Origin: {origin_name}")
+                
+        if origin_name != 'Melvin Flipped WCS':
+            # Select origin for Melvin setup
+            setup.parameters.itemByName('wcs_origin_point').value.value = [melvinFlippedPoint]
+            setup.parameters.itemByName('wcs_orientation_flipX').value.value = False
+            setup.parameters.itemByName('wcs_orientation_flipZ').value.value = True
 
-        ui.activeSelections.clear()
-        ui.activeSelections.add(source_setup)
-        # Use text commands to simulate UI copy/paste
-        app.executeTextCommand('NaNeuCAMUI.Duplicate')
-        
-        for setup in setups:
-            if setup.name == "Melvin (2)":
-                new_setup = setup
-                break
-        
-        new_setup.name = "Melvin Flipped"
+            perimeter_op = None
+            for op_index in range(setup.operations.count):
+                op = setup.operations.item(op_index)
+                if op.name.startswith("Perimeter"):
+                    perimeter_op = op
+                    break 
+                else:
+                    perimeter_op = setup.operations.item(0)
 
-        # Select origin for Melvin setup
-        sketchPoint = rootComp.constructionPoints.itemByName('Point3')
-        new_setup.parameters.itemByName('wcs_origin_mode').expression = "'point'"
-        new_setup.parameters.itemByName('wcs_origin_point').value.value = [sketchPoint]
-        new_setup.parameters.itemByName('wcs_orientation_flipX').value.value = False
-        new_setup.parameters.itemByName('wcs_orientation_flipZ').value.value = True
+            perimeter_op.parameters.itemByName('entryPositions').value.value = [melvinFlippedPoint]
+            addMessage("Melvin WCS is set to the bottom-left corner.")
 
-        perimeter_op = None
-        for op_index in range(new_setup.operations.count):
-            op = new_setup.operations.item(op_index)
-            if op.name.startswith("Perimeter"):
-                perimeter_op = op
-                break 
-            else:
-                perimeter_op = setup.operations.item(0)
+        else:
+            # Select origin for default Melvin WCS
+            setup.parameters.itemByName('wcs_origin_point').value.value = [melvinPoint]
+            setup.parameters.itemByName('wcs_orientation_flipX').value.value = True
+            setup.parameters.itemByName('wcs_orientation_flipZ').value.value = True
 
-        perimeter_op.parameters.itemByName('entryPositions').value.value = [sketchPoint]
+            perimeter_op = None
+            for op_index in range(setup.operations.count):
+                op = setup.operations.item(op_index)
+                if op.name.startswith("Perimeter"):
+                    perimeter_op = op
+                    break 
+                else:
+                    perimeter_op = setup.operations.item(0)
+
+            perimeter_op.parameters.itemByName('entryPositions').value.value = [melvinPoint]
+            addMessage("Melvin WCS is set to the top-right corner.")
+
         cam.generateToolpath(perimeter_op)
-      
-        addMessage("A new Melvin setup was created")
+        addMessage("The Melvin setup is ready to post process!")
 
     except:
         ui.messageBox(f"copySetup(): failed:\n{traceback.format_exc()}")
